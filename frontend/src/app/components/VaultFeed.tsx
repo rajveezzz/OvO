@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Play, Pause, Clock } from "lucide-react";
+import { Play, Pause, Clock, Trash2 } from "lucide-react";
 import { type TrackNode } from "../data";
 import { useMemo } from "react";
 
@@ -37,6 +37,7 @@ interface IdeaCardProps {
   track: TrackNode;
   isPlaying: boolean;
   onTogglePlay: (id: string) => void;
+  onDelete: (id: string) => void;
 }
 
 function WaveformBar({ height, isPlaying, index }: { height: number; isPlaying: boolean; index: number }) {
@@ -63,7 +64,7 @@ function WaveformBar({ height, isPlaying, index }: { height: number; isPlaying: 
   );
 }
 
-function IdeaCard({ track, isPlaying, onTogglePlay }: IdeaCardProps) {
+function IdeaCard({ track, isPlaying, onTogglePlay, onDelete }: IdeaCardProps) {
   const waveform = useMemo(() => generateWaveform(track.id, 32), [track.id]);
   const moodColor = MOOD_COLORS[track.mood] || "#64748b";
 
@@ -100,9 +101,18 @@ function IdeaCard({ track, isPlaying, onTogglePlay }: IdeaCardProps) {
           {isPlaying ? <Pause size={14} color="#fff" /> : <Play size={14} color="rgba(255,255,255,0.7)" style={{ marginLeft: 1 }} />}
         </motion.button>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold truncate" style={{ color: "rgba(255,255,255,0.9)" }}>
-            {track.title}
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold truncate" style={{ color: "rgba(255,255,255,0.9)" }}>
+              {track.title}
+            </p>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(track.id); }}
+              className="p-1.5 -mr-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-all hover:bg-white/10 hover:text-red-400 text-white/50"
+              title="Delete fragment"
+            >
+              <Trash2 size={14} className="currentColor" />
+            </button>
+          </div>
           <div className="flex items-center gap-1.5 mt-0.5">
             <Clock size={10} style={{ color: "rgba(255,255,255,0.25)" }} />
             <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.3)" }}>{track.timestamp}</span>
@@ -159,9 +169,10 @@ interface VaultFeedProps {
   tracks: TrackNode[];
   playingId: string | null;
   onTogglePlay: (id: string) => void;
+  onDelete: (id: string) => void;
 }
 
-export default function VaultFeed({ tracks, playingId, onTogglePlay }: VaultFeedProps) {
+export default function VaultFeed({ tracks, playingId, onTogglePlay, onDelete }: VaultFeedProps) {
   return (
     <div>
       <div className="flex items-center justify-between mb-5">
@@ -180,6 +191,7 @@ export default function VaultFeed({ tracks, playingId, onTogglePlay }: VaultFeed
               track={t}
               isPlaying={playingId === t.id}
               onTogglePlay={onTogglePlay}
+              onDelete={onDelete}
             />
           ))}
         </AnimatePresence>

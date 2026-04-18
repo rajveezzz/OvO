@@ -94,6 +94,12 @@ export default function DashboardPage() {
     setActiveTrackId(id);
   }, []);
 
+  const handleDeleteTrack = useCallback((id: string) => {
+    setTracks((prev) => prev.filter((t) => t.id !== id));
+    setPlayingId((prev) => (prev === id ? null : prev));
+    setActiveTrackId((prev) => (prev === id ? null : prev));
+  }, []);
+
   const handleUploadComplete = useCallback(
     (fragment: TrackNode) => {
       // Prepend the new fragment and select it
@@ -286,6 +292,7 @@ export default function DashboardPage() {
                   tracks={filteredTracks}
                   playingId={playingId}
                   onTogglePlay={handleTogglePlay}
+                  onDelete={handleDeleteTrack}
                 />
               </AnimatePresence>
             )}
