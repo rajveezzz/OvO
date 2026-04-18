@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Play, Pause, SkipBack, SkipForward, Repeat, Shuffle, Volume2, ExternalLink, Check, Loader2
+  Play, Pause, SkipBack, SkipForward, Repeat, Shuffle, Volume2, ExternalLink, Mic2
 } from "lucide-react";
 import { type TrackNode } from "../data";
 
@@ -11,9 +11,64 @@ interface BottomPlayerProps {
   track: TrackNode | null;
   isPlaying: boolean;
   onTogglePlay: () => void;
+  onOpenStudio?: () => void;
+  audioRef?: React.RefObject<HTMLAudioElement | null>;
 }
 
-export default function BottomPlayer({ track, isPlaying, onTogglePlay }: BottomPlayerProps) {
+export default function BottomPlayer({ track, isPlaying, onTogglePlay, onOpenStudio, audioRef }: BottomPlayerProps) {
+  const [progress, setProgress] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [volume, setVolume] = useState(0.7);
+  const [duration, setDuration] = useState(0);
+
+  useEffect(() => {
+    if (!audioRef || !audioRef.current) return;
+    const audio = audioRef.current;
+    
+    const updateTime = () => {
+      setCurrentTime(audio.currentTime);
+      if (audio.duration && !isNaN(audio.duration)) {
+        setProgress(audio.currentTime / audio.duration);
+        setDuration(audio.duration);
+      }
+    };
+    
+    audio.addEventListener("timeupdate", updateTime);
+    audio.addEventListener("loadedmetadata", updateTime);
+    
+    // Set initial volume
+    audio.volume = volume;
+    
+    return () => {
+      audio.removeEventListener("timeupdate", updateTime);
+      audio.removeEventListener("loadedmetadata", updateTime);
+    };
+  }, [audioRef, track, isPlaying]);
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value);
+    setProgress(val);
+    if (audioRef && audioRef.current && audioRef.current.duration) {
+      audioRef.current.currentTime = val * audioRef.current.duration;
+      setCurrentTime(audioRef.current.currentTime);
+    }
+  };
+
+  const handleVolume = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value);
+    setVolume(val);
+    if (audioRef && audioRef.current) {
+      audioRef.current.volume = val;
+    }
+  };
+
+  const formatTime = (seconds: number) => {
+    if (isNaN(seconds)) return "0:00";
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
+
   const handleSync = () => {
     if (!track) return;
     window.open("https://listenbrainz.org/", "_blank");
@@ -93,29 +148,20 @@ export default function BottomPlayer({ track, isPlaying, onTogglePlay }: BottomP
 
           {/* Scrubber */}
           <div className="flex items-center gap-3 w-full max-w-md">
-            <span className="text-[10px] font-mono" style={{ color: "rgba(255,255,255,0.3)" }}>
-              0:00
+            <span className="text-[10px] font-mono w-6 text-right" style={{ color: "rgba(255,255,255,0.3)" }}>
+              {formatTime(currentTime)}
             </span>
-            <div className="flex-1 relative h-1 rounded-full" style={{ background: "rgba(255,255,255,0.06)" }}>
-              <motion.div
-                className="absolute left-0 top-0 h-full rounded-full"
-                style={{ background: "linear-gradient(90deg, #22d3ee, #8b5cf6)", width: "35%" }}
-                layoutId="scrubber-fill"
-              />
-              <motion.div
-                className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white cursor-pointer"
-                style={{
-                  left: "35%",
-                  boxShadow: "0 0 10px rgba(34,211,238,0.5)",
-                }}
-                whileHover={{ scale: 1.4 }}
-                drag="x"
-                dragConstraints={{ left: 0, right: 0 }}
-                dragElastic={0}
-              />
-            </div>
-            <span className="text-[10px] font-mono" style={{ color: "rgba(255,255,255,0.3)" }}>
-              {track?.duration || "0:00"}
+            <input 
+              type="range"
+              min="0"
+              max="1"
+              step="0.001"
+              value={progress}
+              onChange={handleSeek}
+              className="timeline-scrubber flex-1"
+            />
+            <span className="text-[10px] font-mono w-6" style={{ color: "rgba(255,255,255,0.3)" }}>
+              {duration ? formatTime(duration) : (track?.duration || "0:00")}
             </span>
           </div>
         </div>
@@ -124,32 +170,53 @@ export default function BottomPlayer({ track, isPlaying, onTogglePlay }: BottomP
         <div className="flex items-center gap-4 w-56 justify-end flex-shrink-0">
           <div className="flex items-center gap-2">
             <Volume2 size={14} style={{ color: "rgba(255,255,255,0.3)" }} />
-            <div className="w-20 h-1 rounded-full" style={{ background: "rgba(255,255,255,0.06)" }}>
-              <div
-                className="h-full rounded-full"
-                style={{ width: "70%", background: "rgba(255,255,255,0.25)" }}
-              />
-            </div>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={volume}
+              onChange={handleVolume}
+              className="timeline-scrubber w-20"
+            />
           </div>
 
-          <motion.button
-            onClick={handleSync}
-            disabled={!track}
-            whileHover={track ? { scale: 1.03 } : {}}
-            whileTap={track ? { scale: 0.97 } : {}}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold"
-            style={{
-              background: "linear-gradient(135deg, rgba(34,211,238,0.15), rgba(139,92,246,0.15))",
-              border: "1px solid rgba(34,211,238,0.2)",
-              color: "#22d3ee",
-              boxShadow: "0 0 20px rgba(34,211,238,0.1)",
-              opacity: !track ? 0.5 : 1,
-              cursor: !track ? "default" : "pointer"
-            }}
-          >
-            <ExternalLink size={12} />
-            ListenBrainz
-          </motion.button>
+          {track?.type === "ai_split" ? (
+            <motion.button
+              onClick={onOpenStudio}
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold"
+              style={{
+                background: "linear-gradient(135deg, rgba(139,92,246,0.15), rgba(8,145,178,0.15))",
+                border: "1px solid rgba(139,92,246,0.3)",
+                color: "#c4b5fd",
+                boxShadow: "0 0 20px rgba(139,92,246,0.1)",
+              }}
+            >
+              <Mic2 size={12} />
+              Open Studio
+            </motion.button>
+          ) : (
+            <motion.button
+              onClick={handleSync}
+              disabled={!track}
+              whileHover={track ? { scale: 1.03 } : {}}
+              whileTap={track ? { scale: 0.97 } : {}}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold"
+              style={{
+                background: "linear-gradient(135deg, rgba(34,211,238,0.15), rgba(139,92,246,0.15))",
+                border: "1px solid rgba(34,211,238,0.2)",
+                color: "#22d3ee",
+                boxShadow: "0 0 20px rgba(34,211,238,0.1)",
+                opacity: !track ? 0.5 : 1,
+                cursor: !track ? "default" : "pointer"
+              }}
+            >
+              <ExternalLink size={12} />
+              ListenBrainz
+            </motion.button>
+          )}
         </div>
       </div>
     </motion.div>

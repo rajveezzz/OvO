@@ -12,6 +12,7 @@ import {
   Headphones,
   Sparkles,
 } from "lucide-react";
+import OrbitalNetwork from "./components/OrbitalNetwork";
 
 // ─────────────────────────────────────────────────
 // Floating Glass Shape data
@@ -152,115 +153,7 @@ function MiniWaveform() {
     </div>
   );
 }
-// ── Filtering ──
-const filteredTracks = useMemo(() => {
-  let result = tracks;
 
-  if (activeLibrary === "Raw Captures") {
-    result = result.filter((t) => t.type === "raw_capture");
-  } else if (activeLibrary === "AI Splits") {
-    result = result.filter((t) => t.type === "ai_split");
-  }
-
-  if (activeStems.length > 0) {
-    const stemTracks: TrackNode[] = [];
-
-    for (const track of result) {
-      const stemUrls = track.stem_urls || {};
-      let hasAnyStem = false;
-
-      for (const stem of activeStems) {
-        const stemLower = stem.toLowerCase();
-
-        if (track.stems.includes(stemLower)) {
-          hasAnyStem = true;
-
-          if (stemUrls[stemLower]) {
-            stemTracks.push({
-              ...track,
-              id: `${track.id}__${stemLower}`,
-              title: `${track.title} — ${
-                stemLower.charAt(0).toUpperCase() + stemLower.slice(1)
-              }`,
-              file_url: stemUrls[stemLower],
-              stems: [stemLower],
-              type: "ai_split",
-            });
-          }
-        }
-      }
-
-      if (hasAnyStem && Object.keys(stemUrls).length === 0) {
-        stemTracks.push(track);
-      }
-    }
-
-    return stemTracks;
-  }
-
-  return result;
-}, [activeLibrary, activeStems, tracks]);
-
-// ── Audio playback ──
-useEffect(() => {
-  if (!playingId) {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
-    return;
-  }
-
-  const track = filteredTracks.find((t) => t.id === playingId);
-  if (!track?.file_url) return;
-
-  if (audioRef.current) {
-    audioRef.current.pause();
-  }
-
-  const audio = new Audio(track.file_url);
-  audioRef.current = audio;
-  audio.play();
-
-  return () => {
-    audio.pause();
-  };
-}, [playingId, filteredTracks]);
-    }
-    return result;
-  }, []);
-
-  return (
-    <div className="flex items-end gap-[2px] h-8">
-      {bars.map((h, i) => (
-        <motion.div
-          key={i}
-          className="rounded-full"
-          style={{
-            width: 2.5,
-            background: "linear-gradient(to top, #22d3ee, #8b5cf6)",
-            opacity: 0.7,
-            transformOrigin: "bottom",
-          }}
-          animate={{
-            height: [h * 28, Math.random() * 24 + 6, h * 28],
-          }}
-          transition={{
-            duration: 1.2 + Math.random() * 0.8,
-            repeat: Infinity,
-            delay: i * 0.05,
-            ease: "easeInOut",
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
-return () => {
-  audio.pause();
-};
-}, [playingId, filteredTracks]);
 
 // ─────────────────────────────────────────────────
 // Content renderer for each floating glass shape
@@ -543,17 +436,10 @@ export default function LandingPage() {
     }, 900);
   }, [router]);
 
-  // rest of landing page UI...
-}
-const handleScrollToUpload = useCallback(() => {
-  uploadRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-}, []);
 
-const activeTrack: TrackNode | null =
-  filteredTracks.find((t) => t.id === (playingId || activeTrackId)) || null;
   return (
     <div
-      className="relative w-screen h-screen overflow-hidden select-none"
+      className="relative w-screen h-screen overflow-x-hidden overflow-y-auto select-none"
       style={{ background: "#000000" }}
     >
       {/* ─── THE VOID: Aurora ambient blobs ─── */}
@@ -614,14 +500,7 @@ const activeTrack: TrackNode | null =
         transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
       />
 
-      {/* ─── FLOATING GLASS CLUSTER ─── */}
-      {SHAPES.map((shape) => (
-        <FloatingGlassElement
-          key={shape.id}
-          shape={shape}
-          isExiting={isExiting}
-        />
-      ))}
+
 
       {/* ─── HEADER ─── */}
       <AnimatePresence>
@@ -695,7 +574,7 @@ const activeTrack: TrackNode | null =
       </AnimatePresence>
 
       {/* ─── HERO CENTER ─── */}
-      <div className="relative z-10 flex flex-col items-center justify-center h-full px-6">
+      <div className="relative z-10 flex flex-col items-center justify-center min-h-[100vh] px-6">
         <AnimatePresence>
           {!isExiting && (
             <motion.div
@@ -810,7 +689,7 @@ const activeTrack: TrackNode | null =
                   }}
                 />
                 <span className="relative z-10 flex items-center gap-2.5">
-                  Enter the Vault
+                  Create Project
                   <motion.span
                     animate={{ x: [0, 4, 0] }}
                     transition={{
@@ -852,14 +731,29 @@ const activeTrack: TrackNode | null =
         </AnimatePresence>
       </div>
 
+      {/* ─── ORBITAL NETWORK (SCROLL DOWN) ─── */}
+      <AnimatePresence>
+        {!isExiting && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.5, duration: 1 }}
+          >
+            <OrbitalNetwork />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ─── BOTTOM GRADIENT FADE ─── */}
       <div
-        className="fixed bottom-0 left-0 right-0 h-32 pointer-events-none"
+        className="fixed bottom-0 left-0 right-0 h-32 pointer-events-none z-10"
         style={{
           background:
             "linear-gradient(to top, #000000, transparent)",
         }}
       />
+
+
 
       {/* ─── CSS ANIMATIONS ─── */}
       <style jsx>{`
