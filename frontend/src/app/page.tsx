@@ -141,6 +141,96 @@ function MiniWaveform() {
   }, []);
 
   return (
+    <div className="flex items-end gap-[2px] h-6">
+      {bars.map((h, i) => (
+        <div
+          key={i}
+          className="w-[2px] bg-gray-400"
+          style={{ height: `${h * 100}%` }}
+        />
+      ))}
+    </div>
+  );
+}
+// ── Filtering ──
+const filteredTracks = useMemo(() => {
+  let result = tracks;
+
+  if (activeLibrary === "Raw Captures") {
+    result = result.filter((t) => t.type === "raw_capture");
+  } else if (activeLibrary === "AI Splits") {
+    result = result.filter((t) => t.type === "ai_split");
+  }
+
+  if (activeStems.length > 0) {
+    const stemTracks: TrackNode[] = [];
+
+    for (const track of result) {
+      const stemUrls = track.stem_urls || {};
+      let hasAnyStem = false;
+
+      for (const stem of activeStems) {
+        const stemLower = stem.toLowerCase();
+
+        if (track.stems.includes(stemLower)) {
+          hasAnyStem = true;
+
+          if (stemUrls[stemLower]) {
+            stemTracks.push({
+              ...track,
+              id: `${track.id}__${stemLower}`,
+              title: `${track.title} — ${
+                stemLower.charAt(0).toUpperCase() + stemLower.slice(1)
+              }`,
+              file_url: stemUrls[stemLower],
+              stems: [stemLower],
+              type: "ai_split",
+            });
+          }
+        }
+      }
+
+      if (hasAnyStem && Object.keys(stemUrls).length === 0) {
+        stemTracks.push(track);
+      }
+    }
+
+    return stemTracks;
+  }
+
+  return result;
+}, [activeLibrary, activeStems, tracks]);
+
+// ── Audio playback ──
+useEffect(() => {
+  if (!playingId) {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    return;
+  }
+
+  const track = filteredTracks.find((t) => t.id === playingId);
+  if (!track?.file_url) return;
+
+  if (audioRef.current) {
+    audioRef.current.pause();
+  }
+
+  const audio = new Audio(track.file_url);
+  audioRef.current = audio;
+  audio.play();
+
+  return () => {
+    audio.pause();
+  };
+}, [playingId, filteredTracks]);
+    }
+    return result;
+  }, []);
+
+  return (
     <div className="flex items-end gap-[2px] h-8">
       {bars.map((h, i) => (
         <motion.div
@@ -167,10 +257,14 @@ function MiniWaveform() {
   );
 }
 
+return () => {
+  audio.pause();
+};
+}, [playingId, filteredTracks]);
+
 // ─────────────────────────────────────────────────
 // Content renderer for each floating glass shape
 // ─────────────────────────────────────────────────
-
 function ShapeContent({ type }: { type: FloatingShape["content"] }) {
   switch (type) {
     case "waveform":
@@ -449,6 +543,14 @@ export default function LandingPage() {
     }, 900);
   }, [router]);
 
+  // rest of landing page UI...
+}
+const handleScrollToUpload = useCallback(() => {
+  uploadRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+}, []);
+
+const activeTrack: TrackNode | null =
+  filteredTracks.find((t) => t.id === (playingId || activeTrackId)) || null;
   return (
     <div
       className="relative w-screen h-screen overflow-hidden select-none"

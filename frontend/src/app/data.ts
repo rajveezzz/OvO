@@ -14,6 +14,7 @@ export interface TrackNode {
   timestamp: string;
   title: string;
   file_url: string;
+  stem_urls: Record<string, string>;
 }
 
 export const LIBRARY_FILTERS = ["All", "Raw Captures", "AI Splits"] as const;
