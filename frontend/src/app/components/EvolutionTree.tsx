@@ -187,7 +187,8 @@ function NodeSphere({
         <Text
           position={[0, -0.55, 0]}
           fontSize={0.09}
-          color="rgba(255,255,255,0.5)"
+          color="#ffffff"
+          fillOpacity={0.5}
           anchorX="center"
           anchorY="middle"
           maxWidth={2}
@@ -421,7 +422,8 @@ function EmptyTreeScene() {
         <Text
           position={[0, 0, 0]}
           fontSize={0.3}
-          color="rgba(255,255,255,0.15)"
+          color="#ffffff"
+          fillOpacity={0.15}
           anchorX="center"
           anchorY="middle"
         >

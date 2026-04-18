@@ -4,7 +4,7 @@ OVO Backend — FastAPI Server (Phase 2: Core Engine)
 Multi-agent orchestration gateway with full audio pipeline.
 
 Pipeline:
-  1. Receive .wav → save to temp disk
+  1. Receive audio file (.wav/.mp3/.flac/.ogg/etc.) → convert to WAV
   2. Librosa   → extract BPM, Key, Duration
   3. Demucs    → source-separate into stems (vocals, drums, bass, other)
   4. Groq AI   → generate creative title + mood from audio metadata
@@ -37,6 +37,52 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.models import FragmentResponse, IngestResponse, fragment_from_db_row
+
+# ──────────────────────────────────────────────
+# Supported audio formats
+# ──────────────────────────────────────────────
+
+SUPPORTED_AUDIO_EXTENSIONS = {
+    ".wav", ".mp3", ".flac", ".ogg", ".m4a",
+    ".aac", ".wma", ".aiff", ".webm", ".opus",
+}
+
+
+def _get_ffmpeg_path() -> str:
+    """Returns the path to the bundled ffmpeg binary from imageio-ffmpeg."""
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except ImportError:
+        return "ffmpeg"  # Fall back to system ffmpeg
+
+
+def _convert_to_wav(input_path: str, output_wav_path: str) -> None:
+    """
+    Converts any supported audio file to 16-bit PCM WAV using ffmpeg directly.
+    Uses the bundled ffmpeg from imageio-ffmpeg (no system install needed).
+    """
+    ffmpeg_path = _get_ffmpeg_path()
+
+    result = subprocess.run(
+        [
+            ffmpeg_path,
+            "-y",             # Overwrite output without asking
+            "-i", input_path, # Input file
+            "-ar", "22050",   # Sample rate (matches librosa default)
+            "-ac", "1",       # Mono
+            "-sample_fmt", "s16",  # 16-bit PCM
+            output_wav_path,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(f"ffmpeg conversion failed: {result.stderr[:300]}")
+
+    logger.info(f"  🔄 Converted to WAV: {output_wav_path}")
 
 # ──────────────────────────────────────────────
 # Logging
@@ -175,12 +221,16 @@ def _run_demucs(wav_path: str, output_dir: str) -> list[str]:
     logger.info("  🎛️  Running Demucs source separation...")
 
     # Run demucs — outputs to <output_dir>/htdemucs/<filename_without_ext>/
-    result = subprocess.run(
-        ["demucs", "-n", "htdemucs", "--out", output_dir, wav_path],
-        capture_output=True,
-        text=True,
-        timeout=300,  # 5-minute timeout for long files
-    )
+    try:
+        result = subprocess.run(
+            ["demucs", "-n", "htdemucs", "--out", output_dir, wav_path],
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5-minute timeout for long files
+        )
+    except FileNotFoundError:
+        logger.warning("  ⚠ Demucs is not installed — skipping stem separation")
+        return []
 
     if result.returncode != 0:
         logger.warning(f"  ⚠ Demucs failed (code {result.returncode}): {result.stderr[:300]}")
@@ -288,15 +338,17 @@ async def list_fragments(
 @app.post(
     "/api/v1/ingest",
     response_model=IngestResponse,
-    summary="Ingest a .wav audio file",
+    summary="Ingest an audio file",
     description=(
+        "Accepts .wav, .mp3, .flac, .ogg, .m4a, .aac, .aiff, .wma, .webm, .opus. "
+        "Non-WAV files are auto-converted to WAV. "
         "Full pipeline: Librosa analysis → Demucs stem separation → "
         "Groq AI tagging → sentence-transformers embedding → "
         "Supabase storage + DB insert."
     ),
 )
 async def ingest_audio(
-    file: UploadFile = File(..., description="The .wav audio file to ingest"),
+    file: UploadFile = File(..., description="The audio file to ingest (.wav, .mp3, .flac, .ogg, .m4a, etc.)"),
     parent_id: str | None = Query(
         default=None,
         description="UUID of the parent fragment (for branching). Leave empty for root.",
@@ -304,7 +356,7 @@ async def ingest_audio(
 ):
     """
     Full ingest pipeline:
-      1. Receive & save temp WAV
+      1. Receive audio file → convert to WAV if needed
       2. Librosa  → BPM, Key, Duration
       3. Demucs   → stem separation → active stems list
       4. Groq AI  → creative title + mood (using stems context)
@@ -316,10 +368,17 @@ async def ingest_audio(
     from app.supabase_client import get_supabase
 
     # ─── Step 0: Validate file type ───
-    if not file.filename or not file.filename.lower().endswith(".wav"):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided.")
+
+    file_ext = os.path.splitext(file.filename.lower())[1]
+    if file_ext not in SUPPORTED_AUDIO_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail="Only .wav files are accepted. Please upload a valid WAV file.",
+            detail=(
+                f"Unsupported format '{file_ext}'. "
+                f"Accepted: {', '.join(sorted(SUPPORTED_AUDIO_EXTENSIONS))}"
+            ),
         )
 
     logger.info(f"🎙️ Received file: {file.filename} ({file.size or 'unknown'} bytes)")
@@ -332,17 +391,30 @@ async def ingest_audio(
             detail="Database not configured. Update backend/.env with Supabase credentials.",
         )
 
-    # ─── Step 2: Save to temp file ───
+    # ─── Step 2: Save to temp file & convert to WAV if needed ───
     fragment_id = str(uuid.uuid4())
+    # Save with original extension so pydub/ffmpeg can detect the format
+    tmp_original_path = os.path.join(tempfile.gettempdir(), f"temp_{fragment_id}{file_ext}")
     tmp_path = os.path.join(tempfile.gettempdir(), f"temp_{fragment_id}.wav")
     demucs_out_dir = os.path.join(tempfile.gettempdir(), f"demucs_{fragment_id}")
 
     try:
         # Write uploaded bytes to disk
         file_content = await file.read()
-        with open(tmp_path, "wb") as f:
+        with open(tmp_original_path, "wb") as f:
             f.write(file_content)
-        logger.info(f"  → Saved temp: {tmp_path} ({len(file_content)} bytes)")
+        logger.info(f"  → Saved temp: {tmp_original_path} ({len(file_content)} bytes)")
+
+        # Convert to WAV if the uploaded file isn't already WAV
+        if file_ext != ".wav":
+            logger.info(f"  🔄 Converting {file_ext} → .wav ...")
+            _convert_to_wav(tmp_original_path, tmp_path)
+            # Read the converted WAV for later upload to storage
+            with open(tmp_path, "rb") as f:
+                file_content = f.read()
+        else:
+            # Already WAV — just rename / use directly
+            tmp_path = tmp_original_path
 
         # ─── Step 3: Librosa analysis (BPM, Key, Duration) ───
         logger.info("  🎵 Running Librosa analysis...")
@@ -459,16 +531,19 @@ async def ingest_audio(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Ingest pipeline failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Ingest failed: {str(e)}")
+        import traceback
+        tb = traceback.format_exc()
+        logger.error(f"❌ Ingest pipeline failed: {e}\n{tb}")
+        raise HTTPException(status_code=500, detail=f"Ingest failed: {str(e)}\n\nTraceback:\n{tb}")
     finally:
-        # ─── Guaranteed cleanup: temp WAV + Demucs output directory ───
-        if os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-                logger.info(f"  🧹 Cleaned up: {tmp_path}")
-            except OSError:
-                pass
+        # ─── Guaranteed cleanup: temp files + Demucs output directory ───
+        for path in (tmp_original_path, tmp_path):
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                    logger.info(f"  🧹 Cleaned up: {path}")
+                except OSError:
+                    pass
         if os.path.isdir(demucs_out_dir):
             try:
                 shutil.rmtree(demucs_out_dir)

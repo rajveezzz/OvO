@@ -33,9 +33,11 @@ export default function UploadZone({ onUploadComplete }: UploadZoneProps) {
 
   const processFile = useCallback(
     async (file: File) => {
-      if (!file.name.toLowerCase().endsWith(".wav")) {
+      const supportedExts = [".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac", ".aiff", ".wma", ".webm", ".opus"];
+      const ext = file.name.toLowerCase().slice(file.name.lastIndexOf("."));
+      if (!supportedExts.includes(ext)) {
         setState("error");
-        setErrorMsg("Only .wav files are accepted");
+        setErrorMsg(`Unsupported format. Accepted: ${supportedExts.join(", ")}`);
         setTimeout(() => {
           setState("idle");
           setErrorMsg("");
@@ -127,7 +129,7 @@ export default function UploadZone({ onUploadComplete }: UploadZoneProps) {
             }}
           >
             <Upload size={14} />
-            Upload .wav
+            Upload Audio
           </motion.button>
         )}
       </AnimatePresence>
@@ -184,7 +186,7 @@ export default function UploadZone({ onUploadComplete }: UploadZoneProps) {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".wav"
+                accept=".wav,.mp3,.flac,.ogg,.m4a,.aac,.aiff,.wma,.webm,.opus,audio/*"
                 className="hidden"
                 onChange={handleFileSelect}
               />
@@ -232,13 +234,13 @@ export default function UploadZone({ onUploadComplete }: UploadZoneProps) {
                       >
                         {state === "dragging"
                           ? "Drop it like it's hot 🔥"
-                          : "Drag & drop a .wav file here"}
+                          : "Drag & drop any audio file here"}
                       </p>
                       <p
                         className="text-xs mt-1"
                         style={{ color: "rgba(255,255,255,0.25)" }}
                       >
-                        or click to browse
+                        MP3, WAV, FLAC, OGG, M4A, AAC & more
                       </p>
                     </div>
                   </motion.div>

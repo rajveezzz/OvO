@@ -16,19 +16,18 @@ python-dotenv==1.1.0              # .env file support
 supabase==2.15.1                  # Supabase Python client (includes postgrest, storage3)
 httpx==0.28.1                     # Async HTTP transport for Supabase
 
-# --- AI / LLM Layer (Groq) ---
+# --- AI / Embeddings / LLM Layer ---
 groq==0.25.0                      # Groq API client (Llama 3.3 70B inference)
+sentence-transformers==3.4.1      # Local vector embeddings
 
 # --- Audio Analysis ---
 librosa==0.11.0                   # BPM detection, key estimation, audio features
 soundfile==0.13.1                 # WAV I/O backend for librosa
 numpy==2.2.5                      # Numerical operations
 
-# --- Source Separation (Demucs) ---
-demucs                            # Meta's Demucs (htdemucs) for stem separation
-
-# --- Vector Embeddings ---
-sentence-transformers             # all-MiniLM-L6-v2 for 384-dim semantic vectors
+# --- Audio Format Conversion ---
+pydub==0.25.1                     # Audio format conversion (mp3/flac/ogg → wav)
+imageio-ffmpeg==0.6.0             # Bundled ffmpeg binary (no system install needed)
 
 # --- Daemon (install separately: pip install sounddevice torch scipy requests) ---
 # sounddevice==0.5.1              # Real-time mic capture
