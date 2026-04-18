@@ -152,17 +152,32 @@ def _save_wav(audio_chunks: list, filename: str) -> str:
     """
     Concatenates audio chunks and saves as a 16kHz mono WAV file.
     Returns the absolute path to the saved file.
+
+    CRITICAL FIX: sounddevice captures audio as float32 in the range [-1.0, 1.0],
+    but mic input can exceed ±1.0 (clipping peaks, gain spikes). If we just do
+    `(audio * 32767).astype(np.int16)`, values outside [-32768, 32767] silently
+    wrap around in numpy, producing near-silent or distorted audio.
+
+    The fix: multiply → clamp → cast. This guarantees Demucs receives full-volume,
+    correctly normalized 16-bit PCM audio.
     """
     # Concatenate all numpy arrays in the buffer
     audio = np.concatenate(audio_chunks, axis=0)
 
-    # Ensure int16 format for WAV
+    # ── Float32 → Int16 normalization with proper clamping ──
+    # Step 1: Scale from [-1.0, 1.0] float range to [-32767, 32767] int range
+    # Step 2: Clamp to prevent int16 overflow (values outside ±1.0 are common)
+    # Step 3: Cast to int16 — now safe because all values are in-range
     if audio.dtype == np.float32:
-        audio = (audio * 32767).astype(np.int16)
+        scaled = audio * 32767.0
+        clamped = np.clip(scaled, -32768, 32767)
+        audio = clamped.astype(np.int16)
 
     # Write using scipy
     filepath = os.path.join(os.getcwd(), filename)
     wavfile.write(filepath, SAMPLE_RATE, audio)
+
+    _status("🔊", "AUDIO OK", f"Peak amplitude: {np.max(np.abs(audio))}/32767", CYAN)
 
     return filepath
 
@@ -324,12 +339,19 @@ def run_daemon(
         chunk = indata[:, 0].copy()
         tensor = torch.from_numpy(chunk).float()
         confidence = vad_model(tensor, SAMPLE_RATE).item()
+        
+        # Calculate overall volume (RMS) to detect instruments, not just voices
+        rms = float(np.sqrt(np.mean(chunk ** 2)))
+        
+        # Audio is active if EITHER voice is detected OR volume is loud enough 
+        # (0.015 represents a moderately quiet instrument hit)
+        is_active = (confidence >= threshold) or (rms >= 0.015)
 
         # ╔═══════════════════════════╗
         # ║   STATE: IDLE             ║
         # ╚═══════════════════════════╝
         if state == "IDLE":
-            if confidence >= threshold:
+            if is_active:
                 # Activity detected! Start capturing.
                 state = "CAPTURING"
                 recording_buffer = [chunk]
@@ -342,7 +364,7 @@ def run_daemon(
         elif state == "CAPTURING":
             recording_buffer.append(chunk)
 
-            if confidence >= threshold:
+            if is_active:
                 # Still active — reset silence counter
                 silence_counter = 0
             else:
@@ -357,7 +379,7 @@ def run_daemon(
             recording_buffer.append(chunk)
             silence_counter += 1
 
-            if confidence >= threshold:
+            if is_active:
                 # Sound resumed! Back to CAPTURING.
                 silence_counter = 0
                 state = "CAPTURING"

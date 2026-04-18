@@ -23,6 +23,7 @@ Run with:
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+import io
 import logging
 import os
 import shutil
@@ -41,8 +42,6 @@ from app.config import get_settings
 from app.models import (
     FragmentResponse, 
     IngestResponse, 
-    ScrobbleRequest, 
-    ScrobbleResponse, 
     fragment_from_db_row
 )
 
@@ -204,8 +203,9 @@ _MAJOR_PROFILE = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39,
 _MINOR_PROFILE = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
 _NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
-# RMS threshold — stems below this are considered silent
-_RMS_SILENCE_THRESHOLD = 0.001
+# RMS Threshold below which a separated stem (e.g. drums, bass) is considered empty and discarded.
+# Lowered to 0.0001 to dramatically increase sensitivity and catch subtle instruments.
+_RMS_SILENCE_THRESHOLD = 0.0001
 
 
 def _estimate_key(y: np.ndarray, sr: int) -> str:
@@ -237,63 +237,145 @@ def _format_duration(seconds: float) -> str:
 # Helpers: Demucs Stem Separation
 # ──────────────────────────────────────────────
 
-def _run_demucs(wav_path: str, output_dir: str) -> list[str]:
+def _run_demucs(wav_path: str, output_dir: str) -> dict[str, str]:
     """
     Runs Meta's Demucs (htdemucs) via subprocess to separate a track
     into 4 stems: vocals, drums, bass, other.
 
-    Returns a list of active (non-silent) stem names.
-    """
-    logger.info("  🎛️  Running Demucs source separation...")
+    Returns a dict mapping active stem names to their absolute file paths,
+    e.g. {"vocals": "C:/tmp/demucs_.../htdemucs/temp_.../vocals.wav", ...}
 
-    # Run demucs — outputs to <output_dir>/htdemucs/<filename_without_ext>/
+    Only stems with RMS energy above the silence threshold are included.
+
+    BULLETPROOF APPROACH:
+    - Uses `python -m demucs` instead of bare `demucs` CLI (avoids PATH issues)
+    - Passes FFMPEG env var pointing to the bundled imageio-ffmpeg binary
+    - Uses absolute paths for all file references
+    - Explicit directory verification with full file listing
+    - Loud logging at every step — nothing fails silently
+    """
+    import sys
+    from pathlib import Path
+
+    # ── Resolve absolute paths (Demucs is sensitive to relative paths) ──
+    wav_abs = str(Path(wav_path).resolve())
+    out_abs = str(Path(output_dir).resolve())
+
+    logger.info("  ═══════════════════════════════════════")
+    logger.info("  🎛️  DEMUCS STEM SEPARATION — START")
+    logger.info(f"  🎛️  Input:  {wav_abs}")
+    logger.info(f"  🎛️  Output: {out_abs}")
+
+    # ── Verify input file exists and has content ──
+    if not Path(wav_abs).is_file():
+        logger.error(f"  ❌ DEMUCS INPUT FILE DOES NOT EXIST: {wav_abs}")
+        return {}
+
+    input_size = Path(wav_abs).stat().st_size
+    logger.info(f"  🎛️  Input file size: {input_size:,} bytes")
+    if input_size < 1000:
+        logger.error(f"  ❌ DEMUCS INPUT FILE TOO SMALL ({input_size} bytes) — likely corrupt")
+        return {}
+
+    # ── Build environment with FFMPEG path ──
+    env = os.environ.copy()
+    ffmpeg_path = _get_ffmpeg_path()
+    ffmpeg_dir = str(Path(ffmpeg_path).parent)
+    env["FFMPEG"] = ffmpeg_path
+    # Also prepend ffmpeg's directory to PATH so Demucs can find it
+    env["PATH"] = ffmpeg_dir + os.pathsep + env.get("PATH", "")
+    logger.info(f"  🎛️  FFMPEG: {ffmpeg_path}")
+
+    # ── Run Demucs via python -m (avoids Windows PATH issues) ──
+    cmd = [
+        sys.executable, "-m", "demucs",
+        "-n", "htdemucs",
+        "--out", out_abs,
+        wav_abs,
+    ]
+    logger.info(f"  🎛️  Command: {' '.join(cmd)}")
+
     try:
         result = subprocess.run(
-            ["demucs", "-n", "htdemucs", "--out", output_dir, wav_path],
+            cmd,
             capture_output=True,
             text=True,
-            timeout=300,  # 5-minute timeout for long files
+            timeout=1800,  # 30-minute timeout for full songs
+            env=env,
         )
     except FileNotFoundError:
-        logger.warning("  ⚠ Demucs is not installed — skipping stem separation")
-        return []
+        logger.error("  ❌ DEMUCS CRITICAL: Python executable not found!")
+        logger.error(f"  ❌ sys.executable = {sys.executable}")
+        return {}
+    except subprocess.TimeoutExpired:
+        logger.error("  ❌ DEMUCS TIMED OUT after 1800 seconds!")
+        return {}
+
+    # ── Log ALL output from Demucs ──
+    if result.stdout:
+        logger.info(f"  🎛️  Demucs stdout:\n{result.stdout[:1000]}")
+    if result.stderr:
+        logger.info(f"  🎛️  Demucs stderr:\n{result.stderr[:1000]}")
 
     if result.returncode != 0:
-        logger.warning(f"  ⚠ Demucs failed (code {result.returncode}): {result.stderr[:300]}")
-        return []
+        logger.error(f"  ❌ DEMUCS FAILED with exit code {result.returncode}")
+        logger.error(f"  ❌ stderr: {result.stderr[:500]}")
+        return {}
 
-    # Locate the separated stems directory
-    # Demucs outputs to: <output_dir>/htdemucs/<stem_name>/
-    wav_name = os.path.splitext(os.path.basename(wav_path))[0]
-    stems_dir = os.path.join(output_dir, "htdemucs", wav_name)
+    logger.info("  ✅ DEMUCS SUBPROCESS COMPLETED SUCCESSFULLY")
 
-    if not os.path.isdir(stems_dir):
-        logger.warning(f"  ⚠ Demucs output directory not found: {stems_dir}")
-        return []
+    # ── Locate the separated stems directory ──
+    # Demucs outputs to: <output_dir>/htdemucs/<wav_basename_no_ext>/
+    wav_name = Path(wav_abs).stem
+    stems_dir = Path(out_abs) / "htdemucs" / wav_name
 
-    # Check each stem's RMS energy to determine which are active
-    active_stems = []
+    logger.info(f"  🎛️  Expected stems dir: {stems_dir}")
+
+    if not stems_dir.is_dir():
+        logger.error(f"  ❌ DEMUCS OUTPUT DIRECTORY DOES NOT EXIST: {stems_dir}")
+        # List what IS in the output dir for debugging
+        out_path = Path(out_abs)
+        if out_path.is_dir():
+            all_files = list(out_path.rglob("*"))
+            logger.error(f"  ❌ Files found in output dir ({len(all_files)}):")
+            for f in all_files[:20]:
+                logger.error(f"      {f}")
+        else:
+            logger.error(f"  ❌ Output directory itself doesn't exist: {out_abs}")
+        return {}
+
+    # ── List all files in stems directory ──
+    stem_files = list(stems_dir.iterdir())
+    logger.info(f"  🎛️  Files in stems dir ({len(stem_files)}):")
+    for f in stem_files:
+        logger.info(f"      {f.name}  ({f.stat().st_size:,} bytes)")
+
+    # ── Check each stem's RMS energy to determine which are active ──
+    active_stems: dict[str, str] = {}
     stem_names = ["vocals", "drums", "bass", "other"]
 
     for stem_name in stem_names:
-        stem_path = os.path.join(stems_dir, f"{stem_name}.wav")
-        if not os.path.exists(stem_path):
+        stem_path = stems_dir / f"{stem_name}.wav"
+        if not stem_path.exists():
+            logger.warning(f"    ⚠ {stem_name}.wav NOT FOUND in {stems_dir}")
             continue
 
         try:
             # Load the separated stem and compute RMS energy
-            y_stem, _ = librosa.load(stem_path, sr=22050, mono=True)
+            y_stem, _ = librosa.load(str(stem_path), sr=22050, mono=True)
             rms = float(np.sqrt(np.mean(y_stem ** 2)))
 
             if rms > _RMS_SILENCE_THRESHOLD:
-                active_stems.append(stem_name)
+                active_stems[stem_name] = str(stem_path)
                 logger.info(f"    ✓ {stem_name}: ACTIVE (RMS={rms:.4f})")
             else:
                 logger.info(f"    · {stem_name}: silent  (RMS={rms:.6f})")
         except Exception as e:
             logger.warning(f"    ⚠ Could not analyze stem '{stem_name}': {e}")
 
-    logger.info(f"  🎛️  Active stems: {active_stems or ['none detected']}")
+    logger.info(f"  🎛️  Active stems: {list(active_stems.keys()) or ['none detected']}")
+    logger.info("  🎛️  DEMUCS STEM SEPARATION — DONE")
+    logger.info("  ═══════════════════════════════════════")
     return active_stems
 
 
@@ -511,21 +593,12 @@ async def ingest_audio(
         logger.info(f"  🎵 Librosa: {bpm} BPM, {key}, {duration}")
 
         # ─── Step 4: Demucs stem separation ───
-        # HACKATHON OPTIMIZATION: Trim audio to max 20s to make Demucs lightning fast!
+        # Processing full audio file without trimming
         demucs_input_path = tmp_path
-        try:
-            if duration_sec > 20:
-                logger.info("  ✂️  Trimming audio to 20s for ultra-fast stem separation...")
-                demucs_input_path = os.path.join(tempfile.gettempdir(), f"trim_{fragment_id}.wav")
-                subprocess.run(
-                    [_get_ffmpeg_path(), "-y", "-t", "20", "-i", tmp_path, demucs_input_path],
-                    capture_output=True, timeout=10
-                )
-        except Exception as e:
-            logger.warning(f"  ⚠ Failed to trim for Demucs: {e}")
-            demucs_input_path = tmp_path
 
-        stems = _run_demucs(demucs_input_path, demucs_out_dir)
+        # _run_demucs now returns {stem_name: stem_file_path} dict
+        stems_map = _run_demucs(demucs_input_path, demucs_out_dir)
+        stems = list(stems_map.keys())  # e.g. ["vocals", "drums", "bass"]
 
         # ─── Step 5: Groq AI tagging & Numeric Sequence Title ───
         logger.info("  🤖 Generating AI metadata via Groq...")
@@ -565,6 +638,7 @@ async def ingest_audio(
             logger.warning("  ⚠ Embedding model not loaded — skipping vector")
 
         # ─── Step 7: Upload to Supabase Storage ───
+        # NOTE: supabase-py v2 accepts raw bytes, NOT io.BytesIO
         storage_path = f"fragments/{fragment_id}.wav"
         file_url = ""
         stem_urls: dict[str, str] = {}
@@ -572,50 +646,47 @@ async def ingest_audio(
         settings = get_settings()
         base_public_url = f"{settings.supabase_url}/storage/v1/object/public/ovo_audio"
 
+        # ── Upload original WAV ──
         try:
-            client.storage.from_("ovo_audio").upload(
+            print(f"\n{'='*60}")
+            print(f"[UPLOAD] Original WAV: {storage_path} ({len(file_content):,} bytes)")
+            res = client.storage.from_("ovo_audio").upload(
                 path=storage_path,
                 file=file_content,
-                file_options={"content-type": "audio/wav"},
+                file_options={"content-type": "audio/wav", "x-upsert": "true"},
             )
+            print(f"[UPLOAD OK] Original → {res}")
             file_url = f"{base_public_url}/{storage_path}"
-            logger.info(f"  ☁️  Uploaded to storage: {storage_path}")
         except Exception as e:
-            logger.warning(f"  ⚠ Storage upload failed: {e}")
+            print(f"[UPLOAD FAIL] Original WAV: {e}")
+            logger.error(f"  ❌ Original upload FAILED: {e}")
 
-        # ─── Step 7b: Upload individual stems (compressed to MP3 for fast playback) ───
-        wav_name = os.path.splitext(os.path.basename(tmp_path))[0]
-        stems_dir = os.path.join(demucs_out_dir, "htdemucs", wav_name)
-
-        for stem_name in stems:
-            stem_wav_path = os.path.join(stems_dir, f"{stem_name}.wav")
-            if not os.path.exists(stem_wav_path):
+        # ── Upload stem WAVs directly (no MP3 conversion) ──
+        for stem_name, stem_path in stems_map.items():
+            if not os.path.exists(stem_path):
+                print(f"[STEM MISSING] {stem_name}: {stem_path}")
                 continue
             try:
-                # Convert WAV → MP3 for fast browser streaming (~35MB → ~2MB)
-                stem_mp3_path = os.path.join(stems_dir, f"{stem_name}.mp3")
-                ffmpeg_path = _get_ffmpeg_path()
-                conv_result = subprocess.run(
-                    [ffmpeg_path, "-y", "-i", stem_wav_path,
-                     "-codec:a", "libmp3lame", "-b:a", "192k", stem_mp3_path],
-                    capture_output=True, text=True, timeout=60,
-                )
-                if conv_result.returncode != 0:
-                    logger.warning(f"  ⚠ Stem MP3 conversion failed ({stem_name}): {conv_result.stderr[:200]}")
-                    continue
+                with open(stem_path, "rb") as f:
+                    stem_bytes = f.read()
 
-                with open(stem_mp3_path, "rb") as sf:
-                    stem_bytes = sf.read()
-                stem_storage_path = f"fragments/{fragment_id}/{stem_name}.mp3"
-                client.storage.from_("ovo_audio").upload(
+                stem_storage_path = f"fragments/{fragment_id}/{stem_name}.wav"
+                print(f"[UPLOAD] Stem {stem_name}: {stem_storage_path} ({len(stem_bytes):,} bytes)")
+
+                res = client.storage.from_("ovo_audio").upload(
                     path=stem_storage_path,
                     file=stem_bytes,
-                    file_options={"content-type": "audio/mpeg"},
+                    file_options={"content-type": "audio/wav", "x-upsert": "true"},
                 )
+                print(f"[UPLOAD OK] {stem_name} → {res}")
                 stem_urls[stem_name] = f"{base_public_url}/{stem_storage_path}"
-                logger.info(f"  ☁️  Uploaded stem: {stem_storage_path} ({len(stem_bytes) // 1024}KB)")
             except Exception as e:
+                print(f"[UPLOAD FAIL] {stem_name}: {e}")
                 logger.warning(f"  ⚠ Stem upload failed ({stem_name}): {e}")
+
+        print(f"[SUMMARY] file_url  = {file_url}")
+        print(f"[SUMMARY] stem_urls = {stem_urls}")
+        print(f"{'='*60}\n")
 
         # ─── Step 8: Database commit ───
         db_record = {
@@ -674,7 +745,7 @@ async def ingest_audio(
         logger.error(f"❌ Ingest pipeline failed: {e}\n{tb}")
         raise HTTPException(status_code=500, detail=f"Ingest failed: {str(e)}\n\nTraceback:\n{tb}")
     finally:
-        # ─── Guaranteed cleanup: temp files + Demucs output directory ───
+        # ─── Cleanup: temp files + Demucs output ───
         for path in (tmp_original_path, tmp_path):
             if os.path.exists(path):
                 try:

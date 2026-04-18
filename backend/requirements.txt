@@ -23,11 +23,12 @@ sentence-transformers==3.4.1      # Local vector embeddings
 # --- Audio Analysis ---
 librosa==0.11.0                   # BPM detection, key estimation, audio features
 soundfile==0.13.1                 # WAV I/O backend for librosa
-numpy==2.2.5                      # Numerical operations
+numpy<2                           # Pinned <2 for PyTorch 2.3 compatibility
 
 # --- Audio Format Conversion ---
 pydub==0.25.1                     # Audio format conversion (mp3/flac/ogg → wav)
 imageio-ffmpeg==0.6.0             # Bundled ffmpeg binary (no system install needed)
+demucs==4.0.1                     # Meta's source separation (stem isolation)
 
 # --- Daemon (install separately: pip install sounddevice torch scipy requests) ---
 # sounddevice==0.5.1              # Real-time mic capture
