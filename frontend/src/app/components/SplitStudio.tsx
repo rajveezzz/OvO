@@ -161,7 +161,10 @@ export default function SplitStudio({ onBack = () => {} }: { onBack?: () => void
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3.5">
                       <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${stem.bg}/10 border border-white/5`}>
-                        <stem.icon size={18} className={stem.color} />
+                        {(() => {
+                          const IconProps: any = { size: 18, className: stem.color };
+                          return <stem.icon {...IconProps} />;
+                        })()}
                       </div>
                       <span className="font-semibold text-[13px] tracking-wide text-white/90">{stem.name}</span>
                     </div>
@@ -275,7 +278,10 @@ export default function SplitStudio({ onBack = () => {} }: { onBack?: () => void
                     </svg>
                     
                     <div className="absolute bottom-2 left-3 flex items-center gap-1.5 opacity-60">
-                      <stem.icon size={12} className={stem.color} />
+                      {(() => {
+                        const IconPropsSmall: any = { size: 12, className: stem.color };
+                        return <stem.icon {...IconPropsSmall} />;
+                      })()}
                       <span className="text-[10px] font-bold tracking-widest text-white uppercase pointer-events-none">
                         {stem.name}
                       </span>

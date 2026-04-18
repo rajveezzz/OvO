@@ -10,6 +10,7 @@ import BottomPlayer from "../components/BottomPlayer";
 import UploadZone from "../components/UploadZone";
 import EmptyState from "../components/EmptyState";
 import AISplitStudio from "../components/AISplitStudio";
+import LiveSplitStudio from "../components/LiveSplitStudio";
 import {
   fetchFragments,
   deleteFragment,
@@ -56,6 +57,28 @@ export default function DashboardPage() {
   useEffect(() => {
     loadFragments();
   }, [loadFragments]);
+
+  // ── Expand Tracks with Stems ──
+  const allExpandedTracks = useMemo(() => {
+    const list = [...tracks];
+    for (const track of tracks) {
+      if (track.stem_urls && Object.keys(track.stem_urls).length > 0) {
+        for (const [stemName, url] of Object.entries(track.stem_urls)) {
+          list.push({
+            ...track,
+            id: `${track.id}__${stemName}`,
+            parent_id: track.id,
+            title: `${stemName.charAt(0).toUpperCase() + stemName.slice(1)}`,
+            file_url: url,
+            stems: [stemName],
+            type: "ai_split",
+            stem_urls: {},
+          });
+        }
+      }
+    }
+    return list;
+  }, [tracks]);
 
   // ── Filtering ──
   const filteredTracks = useMemo(() => {
@@ -114,8 +137,8 @@ export default function DashboardPage() {
       return;
     }
 
-    // Look in filteredTracks so virtual stem tracks can be played too
-    const track = filteredTracks.find((t) => t.id === playingId);
+    // Look in allExpandedTracks so virtual stem tracks can be played too
+    const track = allExpandedTracks.find((t) => t.id === playingId);
     if (!track?.file_url) return;
 
     // Create or update audio element
@@ -131,7 +154,7 @@ export default function DashboardPage() {
     return () => {
       audio.pause();
     };
-  }, [playingId, filteredTracks]);
+  }, [playingId, allExpandedTracks]);
 
   // ── Handlers ──
   const handleStemToggle = useCallback((stem: StemFilter) => {
@@ -173,7 +196,7 @@ export default function DashboardPage() {
 
 
   const activeTrack: TrackNode | null =
-    filteredTracks.find((t) => t.id === (playingId || activeTrackId)) || null;
+    allExpandedTracks.find((t) => t.id === (playingId || activeTrackId)) || null;
 
   if (studioTrackId) {
     const trackToEdit = tracks.find((t) => t.id === studioTrackId);
@@ -322,7 +345,7 @@ export default function DashboardPage() {
           <>
             {/* Evolution Tree */}
             <EvolutionTree
-              tracks={tracks}
+              tracks={allExpandedTracks}
               activeTrackId={activeTrackId}
               onSelectTrack={(id) => setActiveTrackId(id)}
             />
@@ -332,9 +355,19 @@ export default function DashboardPage() {
               <UploadZone onUploadComplete={handleUploadComplete} />
             </div>
 
-            {/* Empty state or Vault Feed */}
+            {/* Empty state, Split Studio, or Vault Feed */}
             {tracks.length === 0 ? (
               <EmptyState onUploadClick={handleScrollToUpload} />
+            ) : activeLibrary === "AI Splits" ? (
+              <LiveSplitStudio 
+                activeSplit={
+                  activeTrack?.stem_urls && Object.keys(activeTrack.stem_urls).length > 0
+                    ? activeTrack 
+                    : activeTrack?.parent_id
+                    ? tracks.find(t => t.id === activeTrack.parent_id) || tracks.find(t => t.stem_urls && Object.keys(t.stem_urls).length > 0) || null
+                    : tracks.find(t => t.stem_urls && Object.keys(t.stem_urls).length > 0) || null
+                } 
+              />
             ) : (
               <AnimatePresence mode="wait">
                 <VaultFeed
