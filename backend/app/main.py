@@ -553,6 +553,10 @@ async def ingest_audio(
         # ─── Step 7: Upload to Supabase Storage ───
         storage_path = f"fragments/{fragment_id}.wav"
         file_url = ""
+        stem_urls: dict[str, str] = {}
+
+        settings = get_settings()
+        base_public_url = f"{settings.supabase_url}/storage/v1/object/public/ovo_audio"
 
         try:
             client.storage.from_("ovo_audio").upload(
@@ -560,14 +564,44 @@ async def ingest_audio(
                 file=file_content,
                 file_options={"content-type": "audio/wav"},
             )
-            settings = get_settings()
-            file_url = (
-                f"{settings.supabase_url}/storage/v1/object/public/"
-                f"ovo_audio/{storage_path}"
-            )
+            file_url = f"{base_public_url}/{storage_path}"
             logger.info(f"  ☁️  Uploaded to storage: {storage_path}")
         except Exception as e:
             logger.warning(f"  ⚠ Storage upload failed: {e}")
+
+        # ─── Step 7b: Upload individual stems (compressed to MP3 for fast playback) ───
+        wav_name = os.path.splitext(os.path.basename(tmp_path))[0]
+        stems_dir = os.path.join(demucs_out_dir, "htdemucs", wav_name)
+
+        for stem_name in stems:
+            stem_wav_path = os.path.join(stems_dir, f"{stem_name}.wav")
+            if not os.path.exists(stem_wav_path):
+                continue
+            try:
+                # Convert WAV → MP3 for fast browser streaming (~35MB → ~2MB)
+                stem_mp3_path = os.path.join(stems_dir, f"{stem_name}.mp3")
+                ffmpeg_path = _get_ffmpeg_path()
+                conv_result = subprocess.run(
+                    [ffmpeg_path, "-y", "-i", stem_wav_path,
+                     "-codec:a", "libmp3lame", "-b:a", "192k", stem_mp3_path],
+                    capture_output=True, text=True, timeout=60,
+                )
+                if conv_result.returncode != 0:
+                    logger.warning(f"  ⚠ Stem MP3 conversion failed ({stem_name}): {conv_result.stderr[:200]}")
+                    continue
+
+                with open(stem_mp3_path, "rb") as sf:
+                    stem_bytes = sf.read()
+                stem_storage_path = f"fragments/{fragment_id}/{stem_name}.mp3"
+                client.storage.from_("ovo_audio").upload(
+                    path=stem_storage_path,
+                    file=stem_bytes,
+                    file_options={"content-type": "audio/mpeg"},
+                )
+                stem_urls[stem_name] = f"{base_public_url}/{stem_storage_path}"
+                logger.info(f"  ☁️  Uploaded stem: {stem_storage_path} ({len(stem_bytes) // 1024}KB)")
+            except Exception as e:
+                logger.warning(f"  ⚠ Stem upload failed ({stem_name}): {e}")
 
         # ─── Step 8: Database commit ───
         db_record = {
@@ -581,6 +615,7 @@ async def ingest_audio(
             "mood": mood,
             "title": title,
             "file_url": file_url,
+            "stem_urls": stem_urls,
         }
 
         # Only include embedding if we successfully generated one
@@ -603,6 +638,7 @@ async def ingest_audio(
             timestamp="Just now",
             title=title,
             file_url=file_url,
+            stem_urls=stem_urls,
         )
 
         logger.info(

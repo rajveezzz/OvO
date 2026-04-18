@@ -132,12 +132,26 @@ export default function DashboardPage() {
       result = result.filter((t) => t.type === "ai_split");
     }
 
+    // When stem filters are active, generate virtual stem-only entries
     if (activeStems.length > 0) {
-      result = result.filter((t) =>
-        activeStems.some((stem) =>
-          t.stems.includes(stem.toLowerCase())
-        )
-      );
+      const stemTracks: TrackNode[] = [];
+      for (const track of result) {
+        const stemUrls = track.stem_urls || {};
+        for (const stem of activeStems) {
+          const stemLower = stem.toLowerCase();
+          if (track.stems.includes(stemLower) && stemUrls[stemLower]) {
+            stemTracks.push({
+              ...track,
+              id: `${track.id}__${stemLower}`,
+              title: `${track.title} — ${stemLower.charAt(0).toUpperCase() + stemLower.slice(1)}`,
+              file_url: stemUrls[stemLower],
+              stems: [stemLower],
+              type: "ai_split",
+            });
+          }
+        }
+      }
+      return stemTracks;
     }
 
     return result;

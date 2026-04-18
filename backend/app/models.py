@@ -86,6 +86,10 @@ class FragmentResponse(BaseModel):
     file_url: str = Field(
         "", description="Public URL to the .wav file in Supabase Storage"
     )
+    stem_urls: dict[str, str] = Field(
+        default_factory=dict,
+        description='URLs to individual stem files, e.g. {"vocals": "https://...", "drums": "https://..."}',
+    )
 
     class Config:
         # Allow creating from ORM / dict objects returned by Supabase
@@ -118,6 +122,7 @@ def fragment_from_db_row(row: dict) -> FragmentResponse:
         timestamp=timestamp,
         title=row.get("title", ""),
         file_url=row.get("file_url", ""),
+        stem_urls=row.get("stem_urls", {}),
     )
 
 

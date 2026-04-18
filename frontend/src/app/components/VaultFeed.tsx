@@ -1,9 +1,9 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Play, Pause, Clock, Trash2 } from "lucide-react";
+import { Play, Pause, Clock, Trash2, Volume2 } from "lucide-react";
 import { type TrackNode } from "../data";
-import { useMemo } from "react";
+import { useMemo, useRef, useState, useCallback, useEffect } from "react";
 
 // Generate a deterministic "waveform" from track id
 function generateWaveform(id: string, count: number): number[] {
@@ -30,6 +30,13 @@ const STEM_COLORS: Record<string, string> = {
   drums: "#ef4444",
   bass: "#8b5cf6",
   other: "#22d3ee",
+};
+
+const STEM_LABELS: Record<string, string> = {
+  vocals: "Vocals",
+  drums: "Drums",
+  bass: "Bass",
+  other: "Other",
 };
 
 interface IdeaCardProps {
@@ -63,9 +70,78 @@ function WaveformBar({ height, isPlaying, index }: { height: number; isPlaying: 
   );
 }
 
+function StemTag({
+  stemName,
+  stemUrl,
+  color,
+}: {
+  stemName: string;
+  stemUrl: string | undefined;
+  color: string;
+}) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isStemPlaying, setIsStemPlaying] = useState(false);
+
+  const handleClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!stemUrl) return;
+
+      if (!audioRef.current) {
+        audioRef.current = new Audio(stemUrl);
+        audioRef.current.onended = () => setIsStemPlaying(false);
+      }
+
+      if (isStemPlaying) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+        setIsStemPlaying(false);
+      } else {
+        audioRef.current.play().catch(() => {});
+        setIsStemPlaying(true);
+      }
+    },
+    [stemUrl, isStemPlaying]
+  );
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
+
+  const hasUrl = !!stemUrl;
+  const label = STEM_LABELS[stemName] || stemName;
+
+  return (
+    <motion.button
+      onClick={handleClick}
+      whileHover={hasUrl ? { scale: 1.08 } : {}}
+      whileTap={hasUrl ? { scale: 0.95 } : {}}
+      className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium capitalize transition-all"
+      style={{
+        background: isStemPlaying ? `${color}30` : `${color}15`,
+        color: color,
+        border: isStemPlaying ? `1px solid ${color}60` : "1px solid transparent",
+        cursor: hasUrl ? "pointer" : "default",
+        boxShadow: isStemPlaying ? `0 0 12px ${color}40` : "none",
+      }}
+      title={hasUrl ? `Click to ${isStemPlaying ? "stop" : "play"} ${label} stem` : `${label} stem (no audio)`}
+    >
+      {isStemPlaying && <Volume2 size={9} />}
+      {label}
+    </motion.button>
+  );
+}
+
 function IdeaCard({ track, isPlaying, onTogglePlay, onDelete }: IdeaCardProps) {
   const waveform = useMemo(() => generateWaveform(track.id, 32), [track.id]);
   const moodColor = MOOD_COLORS[track.mood] || "#64748b";
+  const stemUrls = track.stem_urls || {};
 
   return (
     <motion.div
@@ -148,16 +224,12 @@ function IdeaCard({ track, isPlaying, onTogglePlay, onDelete }: IdeaCardProps) {
           {track.mood}
         </span>
         {track.stems.map((s) => (
-          <span
+          <StemTag
             key={s}
-            className="px-2 py-0.5 rounded-full text-[10px] font-medium capitalize"
-            style={{
-              background: `${STEM_COLORS[s] || "#64748b"}15`,
-              color: STEM_COLORS[s] || "#64748b",
-            }}
-          >
-            {s}
-          </span>
+            stemName={s}
+            stemUrl={stemUrls[s]}
+            color={STEM_COLORS[s] || "#64748b"}
+          />
         ))}
       </div>
     </motion.div>
