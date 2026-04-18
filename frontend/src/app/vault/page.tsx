@@ -42,10 +42,7 @@ export default function DashboardPage() {
       setError(null);
       const data = await fetchFragments();
       setTracks(data);
-      // Auto-select the first track if none selected
-      if (data.length > 0 && !activeTrackId) {
-        setActiveTrackId(data[0].id);
-      }
+      setTracks(data);
     } catch (err) {
       console.error("Failed to fetch fragments:", err);
       setError(err instanceof Error ? err.message : "Failed to load");
@@ -391,6 +388,10 @@ export default function DashboardPage() {
           setPlayingId((prev) => (prev ? null : activeTrackId))
         }
         onOpenStudio={() => setStudioTrackId(activeTrackId)}
+        onClose={() => {
+          setPlayingId(null);
+          setActiveTrackId(null);
+        }}
         audioRef={audioRef}
       />
     </div>
