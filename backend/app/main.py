@@ -511,7 +511,21 @@ async def ingest_audio(
         logger.info(f"  🎵 Librosa: {bpm} BPM, {key}, {duration}")
 
         # ─── Step 4: Demucs stem separation ───
-        stems = _run_demucs(tmp_path, demucs_out_dir)
+        # HACKATHON OPTIMIZATION: Trim audio to max 20s to make Demucs lightning fast!
+        demucs_input_path = tmp_path
+        try:
+            if duration_sec > 20:
+                logger.info("  ✂️  Trimming audio to 20s for ultra-fast stem separation...")
+                demucs_input_path = os.path.join(tempfile.gettempdir(), f"trim_{fragment_id}.wav")
+                subprocess.run(
+                    [_get_ffmpeg_path(), "-y", "-t", "20", "-i", tmp_path, demucs_input_path],
+                    capture_output=True, timeout=10
+                )
+        except Exception as e:
+            logger.warning(f"  ⚠ Failed to trim for Demucs: {e}")
+            demucs_input_path = tmp_path
+
+        stems = _run_demucs(demucs_input_path, demucs_out_dir)
 
         # ─── Step 5: Groq AI tagging & Numeric Sequence Title ───
         logger.info("  🤖 Generating AI metadata via Groq...")

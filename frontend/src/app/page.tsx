@@ -55,6 +55,53 @@ export default function DashboardPage() {
     loadFragments();
   }, [loadFragments]);
 
+  // ── Filtering ──
+  const filteredTracks = useMemo(() => {
+    let result = tracks;
+
+    if (activeLibrary === "Raw Captures") {
+      result = result.filter((t) => t.type === "raw_capture");
+    } else if (activeLibrary === "AI Splits") {
+      result = result.filter((t) => t.type === "ai_split");
+    }
+
+    // When stem filters are active, generate virtual stem-only entries
+    if (activeStems.length > 0) {
+      const stemTracks: TrackNode[] = [];
+      for (const track of result) {
+        const stemUrls = track.stem_urls || {};
+        
+        let hasAnyStem = false;
+        for (const stem of activeStems) {
+          const stemLower = stem.toLowerCase();
+          if (track.stems.includes(stemLower)) {
+            hasAnyStem = true;
+            // If we have isolated stem audio, create a dedicated stem card
+            if (stemUrls[stemLower]) {
+              stemTracks.push({
+                ...track,
+                id: `${track.id}__${stemLower}`,
+                title: `${track.title} — ${stemLower.charAt(0).toUpperCase() + stemLower.slice(1)}`,
+                file_url: stemUrls[stemLower],
+                stems: [stemLower],
+                type: "ai_split",
+              });
+            }
+          }
+        }
+        
+        // If this is an older track that matched the stem filter but doesn't have isolated audio yet,
+        // just show the regular mixed track so the view doesn't look empty.
+        if (hasAnyStem && Object.keys(stemUrls).length === 0) {
+           stemTracks.push(track);
+        }
+      }
+      return stemTracks;
+    }
+
+    return result;
+  }, [activeLibrary, activeStems, tracks]);
+
   // ── Audio playback ──
   useEffect(() => {
     if (!playingId) {
@@ -65,7 +112,8 @@ export default function DashboardPage() {
       return;
     }
 
-    const track = tracks.find((t) => t.id === playingId);
+    // Look in filteredTracks so virtual stem tracks can be played too
+    const track = filteredTracks.find((t) => t.id === playingId);
     if (!track?.file_url) return;
 
     // Create or update audio element
@@ -81,7 +129,7 @@ export default function DashboardPage() {
     return () => {
       audio.pause();
     };
-  }, [playingId, tracks]);
+  }, [playingId, filteredTracks]);
 
   // ── Handlers ──
   const handleStemToggle = useCallback((stem: StemFilter) => {
@@ -122,43 +170,8 @@ export default function DashboardPage() {
     uploadRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, []);
 
-  // ── Filtering ──
-  const filteredTracks = useMemo(() => {
-    let result = tracks;
-
-    if (activeLibrary === "Raw Captures") {
-      result = result.filter((t) => t.type === "raw_capture");
-    } else if (activeLibrary === "AI Splits") {
-      result = result.filter((t) => t.type === "ai_split");
-    }
-
-    // When stem filters are active, generate virtual stem-only entries
-    if (activeStems.length > 0) {
-      const stemTracks: TrackNode[] = [];
-      for (const track of result) {
-        const stemUrls = track.stem_urls || {};
-        for (const stem of activeStems) {
-          const stemLower = stem.toLowerCase();
-          if (track.stems.includes(stemLower) && stemUrls[stemLower]) {
-            stemTracks.push({
-              ...track,
-              id: `${track.id}__${stemLower}`,
-              title: `${track.title} — ${stemLower.charAt(0).toUpperCase() + stemLower.slice(1)}`,
-              file_url: stemUrls[stemLower],
-              stems: [stemLower],
-              type: "ai_split",
-            });
-          }
-        }
-      }
-      return stemTracks;
-    }
-
-    return result;
-  }, [activeLibrary, activeStems, tracks]);
-
   const activeTrack: TrackNode | null =
-    tracks.find((t) => t.id === (playingId || activeTrackId)) || null;
+    filteredTracks.find((t) => t.id === (playingId || activeTrackId)) || null;
 
   return (
     <div

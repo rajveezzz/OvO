@@ -58,12 +58,12 @@ function WaveformBar({ height, isPlaying, index }: { height: number; isPlaying: 
       }}
       animate={
         isPlaying
-          ? { height: [height * 28, Math.random() * 32 + 4, height * 28] }
+          ? { height: [height * 28, (height * 28) + 4 + (index % 4) * 8, height * 28] }
           : { height: height * 28 }
       }
       transition={
         isPlaying
-          ? { duration: 0.4 + Math.random() * 0.3, repeat: Infinity, delay: index * 0.03, ease: "easeInOut" }
+          ? { duration: 0.4 + (index % 3) * 0.1, repeat: Infinity, delay: index * 0.03, ease: "easeInOut" }
           : { duration: 0.4 }
       }
     />
