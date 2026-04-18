@@ -81,3 +81,19 @@ export async function ingestFile(
     xhr.send(formData);
   });
 }
+
+/**
+ * Deletes a fragment by ID from the backend.
+ */
+export async function deleteFragment(id: string): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/fragments/${id}`, {
+    method: "DELETE",
+  });
+
+  if (!res.ok) {
+    console.error(`Failed to delete fragment ${id}: ${res.statusText}`);
+    return false;
+  }
+
+  return true;
+}
