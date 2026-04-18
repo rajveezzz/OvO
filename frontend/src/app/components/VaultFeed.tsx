@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Play, Pause, Clock, Trash2, Volume2 } from "lucide-react";
+import { Play, Pause, Clock, Trash2, Volume2, Edit2, Check } from "lucide-react";
 import { type TrackNode } from "../data";
 import { useMemo, useRef, useState, useCallback, useEffect } from "react";
 
@@ -44,6 +44,7 @@ interface IdeaCardProps {
   isPlaying: boolean;
   onTogglePlay: (id: string) => void;
   onDelete: (id: string) => void;
+  onRename: (id: string, newTitle: string) => void;
 }
 
 function WaveformBar({ height, isPlaying, index }: { height: number; isPlaying: boolean; index: number }) {
@@ -138,7 +139,25 @@ function StemTag({
   );
 }
 
-function IdeaCard({ track, isPlaying, onTogglePlay, onDelete }: IdeaCardProps) {
+function IdeaCard({ track, isPlaying, onTogglePlay, onDelete, onRename }: IdeaCardProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [tempTitle, setTempTitle] = useState(track.title);
+
+  const handleSaveRename = useCallback(() => {
+    if (tempTitle.trim() && tempTitle !== track.title) {
+      onRename(track.id, tempTitle.trim());
+    }
+    setIsEditing(false);
+  }, [track.id, track.title, tempTitle, onRename]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") handleSaveRename();
+    if (e.key === "Escape") {
+      setTempTitle(track.title);
+      setIsEditing(false);
+    }
+  };
+
   const waveform = useMemo(() => generateWaveform(track.id, 32), [track.id]);
   const moodColor = MOOD_COLORS[track.mood] || "#64748b";
   const stemUrls = track.stem_urls || {};
@@ -176,17 +195,49 @@ function IdeaCard({ track, isPlaying, onTogglePlay, onDelete }: IdeaCardProps) {
           {isPlaying ? <Pause size={14} color="#fff" /> : <Play size={14} color="rgba(255,255,255,0.7)" style={{ marginLeft: 1 }} />}
         </motion.button>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold truncate" style={{ color: "rgba(255,255,255,0.9)" }}>
-              {track.title}
-            </p>
-            <button
-              onClick={(e) => { e.stopPropagation(); onDelete(track.id); }}
-              className="p-1.5 -mr-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-all hover:bg-white/10 hover:text-red-400 text-white/50"
-              title="Delete fragment"
-            >
-              <Trash2 size={14} className="currentColor" />
-            </button>
+          <div className="flex items-center justify-between gap-2">
+            {isEditing ? (
+              <input
+                autoFocus
+                type="text"
+                value={tempTitle}
+                onChange={(e) => setTempTitle(e.target.value)}
+                onBlur={handleSaveRename}
+                onKeyDown={handleKeyDown}
+                className="flex-1 bg-white/5 border border-white/10 rounded px-2 py-0.5 text-sm font-semibold text-white focus:outline-none focus:border-cyan-500/50"
+              />
+            ) : (
+              <p className="text-sm font-semibold truncate" style={{ color: "rgba(255,255,255,0.9)" }}>
+                {track.title}
+              </p>
+            )}
+            
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              {isEditing ? (
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleSaveRename(); }}
+                  className="p-1.5 rounded-md hover:bg-white/10 text-cyan-400"
+                  title="Save rename"
+                >
+                  <Check size={14} />
+                </button>
+              ) : (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setIsEditing(true); }}
+                  className="p-1.5 rounded-md hover:bg-white/10 text-white/50 hover:text-white"
+                  title="Rename fragment"
+                >
+                  <Edit2 size={14} />
+                </button>
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(track.id); }}
+                className="p-1.5 rounded-md hover:bg-white/10 hover:text-red-400 text-white/50"
+                title="Delete fragment"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
           </div>
           <div className="flex items-center gap-1.5 mt-0.5">
             <Clock size={10} style={{ color: "rgba(255,255,255,0.25)" }} />
@@ -241,9 +292,10 @@ interface VaultFeedProps {
   playingId: string | null;
   onTogglePlay: (id: string) => void;
   onDelete: (id: string) => void;
+  onRename: (id: string, newTitle: string) => void;
 }
 
-export default function VaultFeed({ tracks, playingId, onTogglePlay, onDelete }: VaultFeedProps) {
+export default function VaultFeed({ tracks, playingId, onTogglePlay, onDelete, onRename }: VaultFeedProps) {
   return (
     <div>
       <div className="flex items-center justify-between mb-5">
@@ -263,6 +315,7 @@ export default function VaultFeed({ tracks, playingId, onTogglePlay, onDelete }:
               isPlaying={playingId === t.id}
               onTogglePlay={onTogglePlay}
               onDelete={onDelete}
+              onRename={onRename}
             />
           ))}
         </AnimatePresence>

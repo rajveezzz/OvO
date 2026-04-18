@@ -490,6 +490,40 @@ async def delete_fragment(fragment_id: str):
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
+class FragmentUpdate(BaseModel):
+    title: str | None = None
+    mood: str | None = None
+
+@app.patch(
+    "/api/v1/fragments/{fragment_id}",
+    summary="Update a fragment",
+    description="Updates fragment metadata like title or mood.",
+)
+async def update_fragment(fragment_id: str, update: FragmentUpdate):
+    """Updates fragment metadata in Supabase."""
+    from app.supabase_client import get_supabase
+
+    client = get_supabase()
+    if not client:
+        raise HTTPException(
+            status_code=503,
+            detail="Database not configured. Update backend/.env with Supabase credentials.",
+        )
+
+    try:
+        # Build update dict only with provided values
+        data = update.dict(exclude_unset=True)
+        if not data:
+            return {"success": True, "message": "No changes requested."}
+
+        response = client.table("fragments").update(data).eq("id", fragment_id).execute()
+        logger.info(f"📝 Updated fragment {fragment_id}: {data}")
+        return {"success": True, "message": f"Updated fragment {fragment_id}", "data": data}
+    except Exception as e:
+        logger.error(f"❌ Failed to update fragment {fragment_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
 # ──────────────────────────────────────────────
 # POST /api/v1/ingest — Full Ingestion Pipeline
 # ──────────────────────────────────────────────

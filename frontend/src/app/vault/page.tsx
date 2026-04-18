@@ -13,6 +13,7 @@ import AISplitStudio from "../components/AISplitStudio";
 import {
   fetchFragments,
   deleteFragment,
+  updateFragment,
   type LibraryFilter,
   type StemFilter,
   type TrackNode,
@@ -155,6 +156,20 @@ export default function DashboardPage() {
     const success = await deleteFragment(id);
     if (!success) {
       console.warn("Failed to delete fragment from backend, it might still exist.");
+    }
+  }, []);
+
+  const handleRenameTrack = useCallback(async (id: string, newTitle: string) => {
+    // Optimistic UI update
+    setTracks((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, title: newTitle } : t))
+    );
+
+    // Update backend
+    const success = await updateFragment(id, { title: newTitle });
+    if (!success) {
+      console.warn("Failed to rename fragment on backend.");
+      // Rollback if needed, but for now we just log a warning
     }
   }, []);
 
@@ -343,6 +358,7 @@ export default function DashboardPage() {
                   playingId={playingId}
                   onTogglePlay={handleTogglePlay}
                   onDelete={handleDeleteTrack}
+                  onRename={handleRenameTrack}
                 />
               </AnimatePresence>
             )}

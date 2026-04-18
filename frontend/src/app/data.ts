@@ -99,3 +99,26 @@ export async function deleteFragment(id: string): Promise<boolean> {
   return true;
 }
 
+/**
+ * Updates a fragment's metadata (e.g. title).
+ */
+export async function updateFragment(
+  id: string,
+  updates: Partial<{ title: string; mood: string }>
+): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/fragments/${id}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(updates),
+  });
+
+  if (!res.ok) {
+    console.error(`Failed to update fragment ${id}: ${res.statusText}`);
+    return false;
+  }
+
+  return true;
+}
+
