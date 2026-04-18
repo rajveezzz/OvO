@@ -380,6 +380,35 @@ async def list_fragments(
 
 
 # ──────────────────────────────────────────────
+# DELETE /api/v1/fragments/{fragment_id}
+# ──────────────────────────────────────────────
+
+@app.delete(
+    "/api/v1/fragments/{fragment_id}",
+    summary="Delete a fragment",
+    description="Deletes a fragment from the database.",
+)
+async def delete_fragment(fragment_id: str):
+    """Deletes a fragment from Supabase."""
+    from app.supabase_client import get_supabase
+
+    client = get_supabase()
+    if not client:
+        raise HTTPException(
+            status_code=503,
+            detail="Database not configured. Update backend/.env with Supabase credentials.",
+        )
+
+    try:
+        response = client.table("fragments").delete().eq("id", fragment_id).execute()
+        logger.info(f"🗑️ Deleted fragment {fragment_id}")
+        return {"success": True, "message": f"Deleted fragment {fragment_id}"}
+    except Exception as e:
+        logger.error(f"❌ Failed to delete fragment {fragment_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
+# ──────────────────────────────────────────────
 # POST /api/v1/ingest — Full Ingestion Pipeline
 # ──────────────────────────────────────────────
 
