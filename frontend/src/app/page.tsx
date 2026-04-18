@@ -11,6 +11,7 @@ import UploadZone from "./components/UploadZone";
 import EmptyState from "./components/EmptyState";
 import {
   fetchFragments,
+  deleteFragment,
   type LibraryFilter,
   type StemFilter,
   type TrackNode,
@@ -94,10 +95,18 @@ export default function DashboardPage() {
     setActiveTrackId(id);
   }, []);
 
-  const handleDeleteTrack = useCallback((id: string) => {
+  const handleDeleteTrack = useCallback(async (id: string) => {
+    // Optimistic UI update
     setTracks((prev) => prev.filter((t) => t.id !== id));
     setPlayingId((prev) => (prev === id ? null : prev));
     setActiveTrackId((prev) => (prev === id ? null : prev));
+    
+    // Delete from backend
+    const success = await deleteFragment(id);
+    if (!success) {
+      console.warn("Failed to delete fragment from backend, it might still exist.");
+      // Ideally we would revert the optimistic update here if needed
+    }
   }, []);
 
   const handleUploadComplete = useCallback(
