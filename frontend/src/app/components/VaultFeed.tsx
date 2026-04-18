@@ -26,11 +26,10 @@ const MOOD_COLORS: Record<string, string> = {
 };
 
 const STEM_COLORS: Record<string, string> = {
-  guitar: "#f97316",
+  vocals: "#ec4899",
   drums: "#ef4444",
   bass: "#8b5cf6",
-  vocals: "#ec4899",
-  synth: "#22d3ee",
+  other: "#22d3ee",
 };
 
 interface IdeaCardProps {

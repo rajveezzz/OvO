@@ -2,13 +2,25 @@
 
 import { motion } from "framer-motion";
 import {
-  Layers, Mic, Sparkles, Guitar, Drum, AudioLines, MicVocal, Piano, CircleDot,
+  Layers, Mic, Sparkles, Drum, AudioLines, MicVocal, Waves, CircleDot,
   type LucideIcon,
 } from "lucide-react";
 import { LIBRARY_FILTERS, STEM_FILTERS, type LibraryFilter, type StemFilter } from "../data";
 
+// Icons mapped to Demucs stem names (lowercase)
 const STEM_ICONS: Record<string, LucideIcon> = {
-  Guitar, Drums: Drum, Bass: AudioLines, Vocals: MicVocal, Synth: Piano,
+  vocals: MicVocal,
+  drums: Drum,
+  bass: AudioLines,
+  other: Waves,
+};
+
+// Display-friendly labels for stems
+const STEM_LABELS: Record<string, string> = {
+  vocals: "Vocals",
+  drums: "Drums",
+  bass: "Bass",
+  other: "Other",
 };
 
 interface SidebarProps {
@@ -80,6 +92,7 @@ export default function Sidebar({
           {STEM_FILTERS.map((s) => {
             const Icon = STEM_ICONS[s] || CircleDot;
             const active = activeStems.includes(s);
+            const label = STEM_LABELS[s] || s;
             return (
               <motion.button
                 key={s}
@@ -95,7 +108,7 @@ export default function Sidebar({
                 }}
               >
                 <Icon size={15} style={{ color: active ? "#8b5cf6" : "rgba(255,255,255,0.3)" }} />
-                {s}
+                {label}
                 {active && (
                   <motion.div
                     layoutId={`stem-dot-${s}`}
@@ -113,7 +126,7 @@ export default function Sidebar({
       <div className="mt-auto pt-4" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
         <div className="flex justify-between text-[10px]" style={{ color: "rgba(255,255,255,0.25)" }}>
           <span>{trackCount} idea{trackCount !== 1 ? "s" : ""}</span>
-          <span>OVO v0.1.0</span>
+          <span>OVO v0.2.0</span>
         </div>
       </div>
     </motion.aside>

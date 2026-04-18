@@ -67,13 +67,13 @@ except ImportError as e:
 # ──────────────────────────────────────────────
 
 SAMPLE_RATE = 16000          # Silero VAD requires exactly 16000 Hz
-CHUNK_DURATION_MS = 64       # 64ms chunks (1024 samples at 16kHz)
-CHUNK_SAMPLES = int(SAMPLE_RATE * CHUNK_DURATION_MS / 1000)  # = 1024
+CHUNK_DURATION_MS = 32       # 32ms chunks (512 samples at 16kHz) — required by Silero VAD v5+
+CHUNK_SAMPLES = int(SAMPLE_RATE * CHUNK_DURATION_MS / 1000)  # = 512
 SILENCE_TRIGGER_SEC = 3.0    # 3 seconds of silence = idea is finished
 MIN_RECORDING_SEC = 1.0      # Ignore recordings shorter than 1 second
 
 # Derived: how many silent chunks = 3.0s
-SILENCE_CHUNKS_NEEDED = int(SILENCE_TRIGGER_SEC * 1000 / CHUNK_DURATION_MS)  # ~47
+SILENCE_CHUNKS_NEEDED = int(SILENCE_TRIGGER_SEC * 1000 / CHUNK_DURATION_MS)  # ~94
 
 # Terminal colors (ANSI escape codes)
 CYAN    = "\033[96m"

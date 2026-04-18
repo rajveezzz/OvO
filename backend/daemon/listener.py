@@ -148,7 +148,7 @@ def run_listener(
     silence_duration_ms: int = 2000,
     min_recording_ms: int = 1000,
     sample_rate: int = 16000,
-    chunk_size_ms: int = 64,
+    chunk_size_ms: int = 32,
     backend_url: str = "http://localhost:8000",
     save_local: bool = False,
     output_dir: str = "./captures",

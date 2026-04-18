@@ -17,7 +17,7 @@ export interface TrackNode {
 }
 
 export const LIBRARY_FILTERS = ["All", "Raw Captures", "AI Splits"] as const;
-export const STEM_FILTERS = ["Guitar", "Drums", "Bass", "Vocals", "Synth"] as const;
+export const STEM_FILTERS = ["vocals", "drums", "bass", "other"] as const;
 
 export type LibraryFilter = typeof LIBRARY_FILTERS[number];
 export type StemFilter = typeof STEM_FILTERS[number];
